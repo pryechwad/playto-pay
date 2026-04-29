@@ -7,7 +7,7 @@ def create_periodic_task(apps, schema_editor):
 
     schedule, _ = IntervalSchedule.objects.get_or_create(
         every=30,
-        period=IntervalSchedule.SECONDS,
+        period='seconds',
     )
     PeriodicTask.objects.get_or_create(
         name='Requeue stuck payouts',

@@ -10,16 +10,20 @@ export function useMerchantData(merchantId) {
   const [bankAccounts, setBankAccounts] = useState([])
 
   const refresh = useCallback(async () => {
-    const [bal, pay, led, banks] = await Promise.all([
-      getBalance(merchantId),
-      getPayouts(merchantId),
-      getLedger(merchantId),
-      getBankAccounts(merchantId),
-    ])
-    setBalance(bal)
-    setPayouts(pay)
-    setLedger(led)
-    setBankAccounts(banks)
+    try {
+      const [bal, pay, led, banks] = await Promise.all([
+        getBalance(merchantId),
+        getPayouts(merchantId),
+        getLedger(merchantId),
+        getBankAccounts(merchantId),
+      ])
+      setBalance(bal)
+      setPayouts(pay)
+      setLedger(led)
+      setBankAccounts(banks)
+    } catch {
+      // silently ignore poll failures — stale data stays on screen
+    }
   }, [merchantId])
 
   useEffect(() => {

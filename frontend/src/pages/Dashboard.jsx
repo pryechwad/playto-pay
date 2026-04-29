@@ -15,33 +15,29 @@ export default function Dashboard({ merchant }) {
   const hasActive = payouts.some(p => p.status === 'pending' || p.status === 'processing')
 
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-gray-800">{merchant.name}</h1>
+    <div className="flex flex-col gap-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-lg font-semibold text-gray-900">{merchant.name}</h1>
+          <p className="text-sm text-gray-400 mt-0.5">Merchant dashboard</p>
+        </div>
         {hasActive && (
-          <span className="flex items-center gap-1 text-xs text-blue-500">
-            <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse inline-block" />
-            Processing
-          </span>
+          <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 text-blue-600 text-xs font-medium px-3 py-1.5 rounded-full">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+            Payout processing
+          </div>
         )}
       </div>
 
       <BalanceGrid balance={balance} />
 
       {bankAccounts.length > 0 && (
-        <PayoutForm
-          merchantId={merchant.id}
-          bankAccounts={bankAccounts}
-          onSuccess={refresh}
-        />
+        <PayoutForm merchantId={merchant.id} bankAccounts={bankAccounts} onSuccess={refresh} />
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
         <Tabs tabs={TABS} active={tab} onChange={setTab} />
-        {tab === 'payouts'
-          ? <PayoutTable payouts={payouts} />
-          : <LedgerTable entries={ledger} />
-        }
+        {tab === 'payouts' ? <PayoutTable payouts={payouts} /> : <LedgerTable entries={ledger} />}
       </div>
     </div>
   )

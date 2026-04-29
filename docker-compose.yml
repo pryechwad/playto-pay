@@ -1,16 +1,11 @@
-version: '3.9'
-
 services:
   db:
     image: postgres:15
-    environment:
-      POSTGRES_DB: playto
-      POSTGRES_USER: playto_user
-      POSTGRES_PASSWORD: password
+    env_file: .env
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U playto_user -d playto"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -31,14 +26,7 @@ services:
       bash -c "python manage.py migrate &&
                python manage.py seed &&
                gunicorn core.wsgi:application --bind 0.0.0.0:8000 --workers 4"
-    environment:
-      POSTGRES_DB: playto
-      POSTGRES_USER: playto_user
-      POSTGRES_PASSWORD: password
-      POSTGRES_HOST: db
-      REDIS_URL: redis://redis:6379/0
-      DEBUG: "True"
-      ALLOWED_HOSTS: "*"
+    env_file: .env
     ports:
       - "8000:8000"
     depends_on:
@@ -50,12 +38,7 @@ services:
   worker:
     build: ./backend
     command: celery -A core worker -l info -c 4
-    environment:
-      POSTGRES_DB: playto
-      POSTGRES_USER: playto_user
-      POSTGRES_PASSWORD: password
-      POSTGRES_HOST: db
-      REDIS_URL: redis://redis:6379/0
+    env_file: .env
     depends_on:
       db:
         condition: service_healthy
@@ -64,13 +47,10 @@ services:
 
   beat:
     build: ./backend
-    command: celery -A core beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
-    environment:
-      POSTGRES_DB: playto
-      POSTGRES_USER: playto_user
-      POSTGRES_PASSWORD: password
-      POSTGRES_HOST: db
-      REDIS_URL: redis://redis:6379/0
+    command: >
+      bash -c "sleep 15 &&
+               celery -A core beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler"
+    env_file: .env
     depends_on:
       - backend
       - worker
@@ -83,7 +63,5 @@ services:
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
     ports:
       - "5173:5173"
-    environment:
-      VITE_API_BASE: http://localhost:8000
     depends_on:
       - backend
