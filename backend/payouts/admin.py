@@ -1,3 +1,5 @@
 from django.contrib import admin
+from .models import Payout, IdempotencyKey
 
-# Register your models here.
+admin.site.register(Payout)
+admin.site.register(IdempotencyKey)
