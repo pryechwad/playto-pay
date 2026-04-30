@@ -67,7 +67,7 @@ const LedgerIcon = (
   </svg>
 )
 
-function SidebarContent({ merchants, selectedId, onSelect, onClose }) {
+function SidebarContent({ merchants, selectedId, onSelect, onClose, activeTab, onTabChange }) {
   return (
     <div className="flex flex-col h-full">
       {/* Logo */}
@@ -78,9 +78,9 @@ function SidebarContent({ merchants, selectedId, onSelect, onClose }) {
       {/* Nav */}
       <div className="px-3 pt-5 pb-2">
         <p className="text-[10px] font-semibold text-white/20 uppercase tracking-[0.15em] px-3 mb-2">Navigation</p>
-        <NavItem icon={DashIcon} label="Overview" active />
-        <NavItem icon={PayoutIcon} label="Payouts" />
-        <NavItem icon={LedgerIcon} label="Ledger" />
+        <NavItem icon={DashIcon}    label="Overview" active={!activeTab || activeTab === 'overview'} onClick={() => onTabChange?.('overview')} />
+        <NavItem icon={PayoutIcon}  label="Payouts"  active={activeTab === 'payouts'}  onClick={() => onTabChange?.('payouts')} />
+        <NavItem icon={LedgerIcon}  label="Ledger"   active={activeTab === 'ledger'}   onClick={() => onTabChange?.('ledger')} />
       </div>
 
       <div className="h-px bg-white/[0.05] mx-5 my-3" />
@@ -104,22 +104,21 @@ function SidebarContent({ merchants, selectedId, onSelect, onClose }) {
       {/* Footer */}
       <div className="px-5 py-4 border-t border-white/[0.06]">
         <div className="flex items-center gap-2.5">
-          <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/60" />
-          <p className="text-[11px] text-white/25">All systems operational</p>
+          <p className="text-[11px] text-white/25">Powered by Playto Pay</p>
         </div>
       </div>
     </div>
   )
 }
 
-export default function Header({ merchants, selectedId, onSelect }) {
+export default function Header({ merchants, selectedId, onSelect, activeTab, onTabChange }) {
   const [mobileOpen, setMobileOpen] = useState(false)
 
   return (
     <>
       {/* Desktop sidebar */}
       <aside className="hidden md:flex w-60 shrink-0 h-screen sticky top-0 bg-[#0c0e18] border-r border-white/[0.06] flex-col">
-        <SidebarContent merchants={merchants} selectedId={selectedId} onSelect={onSelect} />
+        <SidebarContent merchants={merchants} selectedId={selectedId} onSelect={onSelect} activeTab={activeTab} onTabChange={onTabChange} />
       </aside>
 
       {/* Mobile top bar */}
@@ -148,7 +147,7 @@ export default function Header({ merchants, selectedId, onSelect }) {
                 <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
               </svg>
             </button>
-            <SidebarContent merchants={merchants} selectedId={selectedId} onSelect={onSelect} onClose={() => setMobileOpen(false)} />
+            <SidebarContent merchants={merchants} selectedId={selectedId} onSelect={onSelect} onClose={() => setMobileOpen(false)} activeTab={activeTab} onTabChange={onTabChange} />
           </div>
         </div>
       )}

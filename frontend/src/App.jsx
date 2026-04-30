@@ -37,6 +37,7 @@ function ThemeToggle() {
 function AppInner() {
   const [merchants, setMerchants] = useState([])
   const [selected, setSelected] = useState(null)
+  const [activeTab, setActiveTab] = useState('overview')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const { toasts, addToast, removeToast } = useToast()
@@ -53,17 +54,15 @@ function AppInner() {
   useEffect(() => { load() }, [])
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-[#0f1117]">
-      <div className="flex flex-col items-center gap-4">
-        <div className="relative w-14 h-14">
-          <div className="absolute inset-0 rounded-2xl bg-violet-500/20 animate-ping" />
-          <div className="relative w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center shadow-xl shadow-violet-500/20">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>
-            </svg>
-          </div>
+    <div className="min-h-screen flex items-center justify-center bg-[#0c0e18]">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-900/40">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>
+          </svg>
         </div>
-        <p className="text-sm text-gray-400 dark:text-white/40 font-medium tracking-widest uppercase">Loading…</p>
+        <p className="font-bold text-white text-sm tracking-tight">Playto Pay</p>
+        <p className="text-[10px] text-white/30">Payout Engine</p>
       </div>
     </div>
   )
@@ -87,7 +86,7 @@ function AppInner() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#0f1117] flex">
-      <Sidebar merchants={merchants} selectedId={selected?.id} onSelect={setSelected} />
+      <Sidebar merchants={merchants} selectedId={selected?.id} onSelect={m => { setSelected(m); setActiveTab('overview') }} activeTab={activeTab} onTabChange={setActiveTab} />
       <div className="flex-1 flex flex-col min-w-0">
 
         {/* Top navbar */}
@@ -118,7 +117,7 @@ function AppInner() {
         <main className="flex-1 overflow-y-auto scrollbar-thin">
           <div className="px-6 md:px-8 py-8 max-w-7xl mx-auto w-full">
             {selected
-              ? <Dashboard key={selected.id} merchant={selected} addToast={addToast} />
+              ? <Dashboard key={selected.id} merchant={selected} addToast={addToast} activeTab={activeTab} onTabChange={setActiveTab} />
               : <p className="text-sm text-gray-400 dark:text-white/30">No merchants found. Run the seed command.</p>
             }
           </div>

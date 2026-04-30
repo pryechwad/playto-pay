@@ -45,11 +45,13 @@ function StatCard({ label, value, lightColor, darkColor, active, onClick }) {
   )
 }
 
-export default function Dashboard({ merchant, addToast }) {
+export default function Dashboard({ merchant, addToast, activeTab, onTabChange }) {
   const { balance, payouts, ledger, bankAccounts, loading, refresh } = useMerchantData(merchant.id)
-  const [tab, setTab] = useState('payouts')
   const [showWithdraw, setShowWithdraw] = useState(false)
   const [filter, setFilter] = useState(null)
+
+  const tab = (activeTab === 'payouts' || activeTab === 'ledger') ? activeTab : 'payouts'
+  const setTab = onTabChange
 
   const hasActive = payouts.some(p => p.status === 'pending' || p.status === 'processing')
   const successCount = payouts.filter(p => p.status === 'paid' || p.status === 'completed').length

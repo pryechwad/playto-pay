@@ -12,7 +12,7 @@ from ledger.models import LedgerEntry
 logger = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 3
-PROCESSING_TIMEOUT_SECONDS = 30
+PROCESSING_TIMEOUT_SECONDS = 10
 
 
 @shared_task(bind=True, max_retries=0)
@@ -117,9 +117,7 @@ def _retry_or_fail_payout(payout_id: str):
 
 def _simulate_bank_outcome():
     r = random.random()
-    if r < 0.70:
+    if r < 0.80:
         return 'success'
-    elif r < 0.90:
-        return 'failure'
     else:
-        return 'hang'
+        return 'failure'
