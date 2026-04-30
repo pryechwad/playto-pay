@@ -153,6 +153,8 @@ def _payout_to_dict(payout):
         'status': payout.status,
         'attempt_count': payout.attempt_count,
         'created_at': payout.created_at.isoformat(),
+        'updated_at': payout.updated_at.isoformat(),
+        'processing_started_at': payout.processing_started_at.isoformat() if payout.processing_started_at else None,
     }
 
 

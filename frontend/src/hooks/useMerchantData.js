@@ -8,6 +8,7 @@ export function useMerchantData(merchantId) {
   const [payouts, setPayouts] = useState([])
   const [ledger, setLedger] = useState([])
   const [bankAccounts, setBankAccounts] = useState([])
+  const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
     try {
@@ -23,14 +24,17 @@ export function useMerchantData(merchantId) {
       setBankAccounts(banks)
     } catch {
       // silently ignore poll failures — stale data stays on screen
+    } finally {
+      setLoading(false)
     }
   }, [merchantId])
 
   useEffect(() => {
+    setLoading(true)
     refresh()
     const interval = setInterval(refresh, POLL_INTERVAL)
     return () => clearInterval(interval)
   }, [refresh])
 
-  return { balance, payouts, ledger, bankAccounts, refresh }
+  return { balance, payouts, ledger, bankAccounts, loading, refresh }
 }

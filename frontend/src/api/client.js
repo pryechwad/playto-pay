@@ -17,6 +17,9 @@ export const getLedger = (merchantId) =>
 export const getBankAccounts = (merchantId) =>
   api.get(`/merchants/${merchantId}/bank-accounts/`).then(r => r.data)
 
+export const getPayout = (merchantId, payoutId) =>
+  api.get(`/merchants/${merchantId}/payouts/list/`).then(r => r.data.find(p => p.id === payoutId) ?? null)
+
 export const createPayout = (merchantId, payload, idempotencyKey) =>
   api.post(`/merchants/${merchantId}/payouts/`, payload, {
     headers: { 'Idempotency-Key': idempotencyKey },

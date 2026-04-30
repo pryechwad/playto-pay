@@ -1,14 +1,14 @@
 export default function Tabs({ tabs, active, onChange }) {
   return (
-    <div className="flex gap-1 border-b border-gray-100 mb-5">
+    <div className="flex gap-1 border-b border-white/[0.07] mb-5">
       {tabs.map(t => (
         <button
           key={t}
           onClick={() => onChange(t)}
-          className={`px-3 pb-3 text-sm font-medium capitalize border-b-2 -mb-px transition-colors ${
+          className={`px-4 pb-3 text-sm font-medium capitalize border-b-2 -mb-px transition-all ${
             active === t
-              ? 'border-indigo-500 text-indigo-600'
-              : 'border-transparent text-gray-400 hover:text-gray-600'
+              ? 'border-violet-500 text-white'
+              : 'border-transparent text-white/30 hover:text-white/60'
           }`}
         >
           {t}
