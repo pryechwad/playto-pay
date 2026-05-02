@@ -76,6 +76,7 @@ REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+CELERY_TASK_ALWAYS_EAGER = os.environ.get('CELERY_TASK_ALWAYS_EAGER', 'False') == 'True'
 
 # CORS — allow React dev server and any deployed frontend
 _cors_origins = os.environ.get('CORS_ALLOWED_ORIGINS', '')

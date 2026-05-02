@@ -76,7 +76,10 @@ class PayoutCreateView(APIView):
         try:
             process_payout.delay(str(payout.id))
         except Exception:
-            pass
+            try:
+                process_payout.apply(args=[str(payout.id)])
+            except Exception:
+                pass
         return Response(response_body, status=response_status_code)
 
 
