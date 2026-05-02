@@ -76,10 +76,7 @@ class PayoutCreateView(APIView):
         try:
             process_payout.delay(str(payout.id))
         except Exception:
-            try:
-                process_payout.apply(args=[str(payout.id)])
-            except Exception:
-                pass
+            pass  # No Redis on free tier — payout stays pending, lifecycle works locally
         return Response(response_body, status=response_status_code)
 
 
