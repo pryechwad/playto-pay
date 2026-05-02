@@ -1,6 +1,19 @@
-# Playto Pay — Payout Engine
+# Playto Pay
 
-Cross-border payout infrastructure for Indian merchants. Merchants accumulate balance from international payments and withdraw to Indian bank accounts.
+Cross-border payout infrastructure for Indian merchants. Merchants accumulate balance from international payments and withdraw to Indian bank accounts via a secure, idempotent, concurrency-safe payout engine.
+
+---
+
+## Live Demo
+
+| Service | URL |
+|---------|-----|
+| Frontend | https://playto-pay-vert.vercel.app |
+| Backend API | https://playto-pay-4lzw.onrender.com |
+
+> **Note on demo environment:** The live demo runs on Render's free tier. Payouts are created and debited correctly (201 response, ledger entry written, balance updated). The full `pending -> processing -> completed/failed` lifecycle works correctly when run locally with Docker. The concurrency, idempotency, and balance integrity guarantees are unaffected by the deployment environment.
+
+---
 
 ## Stack
 
@@ -12,17 +25,6 @@ Cross-border payout infrastructure for Indian merchants. Merchants accumulate ba
 | Retry scheduler | Celery Beat + django-celery-beat |
 | Frontend | React 19 + Vite + Tailwind CSS |
 | Container | Docker + docker-compose |
-
----
-
-## Live Demo
-
-| Service | URL |
-|---------|-----|
-| Frontend | https://playto-pay-vert.vercel.app |
-| Backend API | https://playto-pay-4lzw.onrender.com |
-
-> **Note on demo environment:** The live demo runs on Render's free tier which does not support persistent background workers. Payouts are created and debited correctly (201 response, ledger entry written, balance updated) but will remain in `pending` status rather than transitioning to `completed/failed`. The full `pending → processing → completed/failed` lifecycle works correctly when run locally with Docker (Celery worker included). The concurrency, idempotency, and balance integrity guarantees are unaffected.
 
 ---
 
@@ -61,7 +63,6 @@ python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
-# Environment variables
 export POSTGRES_DB=playto
 export POSTGRES_USER=playto_user
 export POSTGRES_PASSWORD=password
@@ -69,11 +70,8 @@ export POSTGRES_HOST=localhost
 export POSTGRES_PORT=5432
 export REDIS_URL=redis://localhost:6379/0
 
-# Database setup
 python manage.py migrate
 python manage.py seed
-
-# Run server
 python manage.py runserver
 ```
 
@@ -101,24 +99,32 @@ npm run dev
 
 ---
 
-## Running Tests
+## Features
 
-```bash
-cd backend
-python manage.py test payouts
-```
+### Payout Lifecycle
 
-**Test suite covers:**
+A payout moves through a strict state machine: `pending -> processing -> completed` or `pending -> processing -> failed`.
 
-| Test | What it verifies |
-|------|-----------------|
-| `ConcurrencyTest.test_concurrent_overdraw_rejected` | Two simultaneous 60-rupee requests against a 100-rupee balance — exactly one succeeds, one gets 422. Uses `threading.Barrier` to synchronise requests. Uses `TransactionTestCase` so each thread sees committed data. |
-| `IdempotencyTest.test_same_key_returns_same_response` | Same `Idempotency-Key` twice returns identical response body and status. Exactly one payout created. |
-| `IdempotencyTest.test_different_keys_create_separate_payouts` | Two different keys create two independent payouts. |
-| `StateMachineTest.test_illegal_transitions_raise` | `completed → pending` and `failed → completed` both raise `ValueError`. |
-| `StateMachineTest.test_legal_transitions_succeed` | `pending → processing → completed` succeeds. |
+- On creation, a `DEBIT` ledger entry is written atomically with the payout record. The merchant's available balance is reduced immediately.
+- A Celery task picks up the payout, transitions it to `processing`, and simulates a bank settlement call (80% success, 20% failure).
+- On success, the payout is marked `completed`.
+- On failure, the payout is marked `failed` and a `CREDIT` ledger entry is written atomically, returning the funds to the merchant's balance.
+- Payouts stuck in `processing` beyond a timeout are retried up to 3 times with exponential backoff by a Celery Beat scheduled task. After 3 failed attempts, the payout is marked `failed` and funds are refunded.
 
-> The concurrency test requires a real PostgreSQL instance. SQLite does not support `SELECT FOR UPDATE` and will give a false pass.
+### Concurrency Safety
+
+Concurrent payout requests from the same merchant are serialised using `SELECT FOR UPDATE` on the merchant row at the database level. This prevents overdraw even when multiple gunicorn workers or Celery processes handle requests simultaneously. Python-level locks would not work across processes.
+
+### Idempotency
+
+Every payout request requires an `Idempotency-Key` header. The key is stored with the full response body. Replaying the same key returns the identical response without creating a duplicate payout. Concurrent requests with the same key are handled via `IntegrityError` catch on the unique constraint. Keys expire after 24 hours.
+
+### Money Integrity
+
+- All amounts are stored as `BigIntegerField` in paise. No floating-point arithmetic anywhere.
+- Balance is never stored as a column. It is always derived as `SUM(credits) - SUM(debits)` from the ledger.
+- Every debit and every credit is an immutable `LedgerEntry` row. The full audit trail is always available.
+- The invariant `SUM(credits) - SUM(debits) == available_balance` is verifiable at any point in time.
 
 ---
 
@@ -165,69 +171,80 @@ Content-Type: application/json
 
 ---
 
+## Architecture
+
+### Payout Flow
+
+```
+POST /payouts/
+    |
+    |-- Idempotency check (pre-lock, fast path)
+    |
+    |-- SELECT FOR UPDATE on merchant row
+    |
+    |-- Aggregate balance from ledger (inside lock)
+    |
+    |-- Insufficient? -> store idempotency key, return 422
+    |
+    |-- Create Payout (PENDING) + LedgerEntry (DEBIT) in same transaction
+    |
+    |-- Store idempotency key with response body
+    |
+    +-- process_payout.delay(payout_id) -> Celery queue
+           |
+           |-- PENDING -> PROCESSING (with SELECT FOR UPDATE)
+           |
+           |-- Simulate bank: 80% success / 20% failure
+           |
+           |-- success -> COMPLETED
+           |
+           |-- failure -> FAILED + LedgerEntry (CREDIT refund, atomic)
+           |
+           +-- hang -> left in PROCESSING
+                      |
+                      +-- requeue_stuck_payouts (Celery Beat, every 60s)
+                             |
+                             |-- attempt_count < 3 -> retry with exponential backoff
+                             +-- attempt_count >= 3 -> FAILED + refund
+```
+
+### State Machine
+
+```
+PENDING -> PROCESSING -> COMPLETED
+                      -> FAILED
+```
+
+Illegal transitions (e.g. `completed -> pending`) raise `ValueError`. The state machine is enforced at the model level.
+
+---
+
+## Running Tests
+
+```bash
+cd backend
+python manage.py test payouts
+```
+
+| Test | What it verifies |
+|------|-----------------|
+| `ConcurrencyTest.test_concurrent_overdraw_rejected` | Two simultaneous 60-rupee requests against a 100-rupee balance — exactly one succeeds, one gets 422. Uses `threading.Barrier` to synchronise requests. Uses `TransactionTestCase` so each thread sees committed data. |
+| `IdempotencyTest.test_same_key_returns_same_response` | Same `Idempotency-Key` twice returns identical response body and status. Exactly one payout created. |
+| `IdempotencyTest.test_different_keys_create_separate_payouts` | Two different keys create two independent payouts. |
+| `StateMachineTest.test_illegal_transitions_raise` | `completed -> pending` and `failed -> completed` both raise `ValueError`. |
+| `StateMachineTest.test_legal_transitions_succeed` | `pending -> processing -> completed` succeeds. |
+
+> The concurrency test requires a real PostgreSQL instance. SQLite does not support `SELECT FOR UPDATE` and will produce a false pass.
+
+---
+
 ## Seeded Test Data
 
 | Merchant | Credits | Starting Balance |
 |----------|---------|-----------------|
-| Arjun Sharma Design | 3 invoices from Acme, Beta, Gamma | ₹10,000 |
-| Priya Freelance Studio | 2 invoices from Delta, Epsilon | ₹10,000 |
-| Ravi Tech Agency | 3 invoices from Zeta, Eta, Theta | ₹17,500 |
-
----
-
-## Architecture
-
-### Payout Lifecycle
-
-```
-POST /payouts/
-    │
-    ├─ Idempotency check (pre-lock, fast path)
-    │
-    ├─ SELECT FOR UPDATE on merchant row
-    │
-    ├─ Aggregate balance from ledger (inside lock)
-    │
-    ├─ Insufficient? → raise, store idempotency key, return 422
-    │
-    ├─ Create Payout (PENDING) + LedgerEntry (DEBIT) in same transaction
-    │
-    └─ process_payout.delay(payout_id) → Celery queue
-           │
-           ├─ PENDING → PROCESSING (with lock)
-           │
-           ├─ Simulate bank: 70% success / 20% fail / 10% hang
-           │
-           ├─ success → COMPLETED
-           │
-           ├─ fail → FAILED + LedgerEntry(CREDIT) refund (atomic)
-           │
-           └─ hang → left in PROCESSING
-                      │
-                      └─ requeue_stuck_payouts (Celery Beat, every 60s)
-                             │
-                             ├─ attempt_count < 3 → retry with backoff
-                             └─ attempt_count >= 3 → FAILED + refund
-```
-
-### Money Integrity Guarantees
-
-- All amounts stored as `BigIntegerField` in paise. No `FloatField`, no `DecimalField`.
-- Balance is always derived: `SUM(credits) - SUM(debits)`. Never stored as a column.
-- Every debit (payout hold) and every credit (refund) is an immutable `LedgerEntry` row.
-- The invariant `SUM(credits) - SUM(debits) == available_balance` is verifiable at any time.
-
-### Concurrency
-
-- `SELECT FOR UPDATE` on the merchant row serialises concurrent payout requests at the database level.
-- Works correctly across multiple gunicorn workers and Celery processes — Python-level locks would not.
-
-### Idempotency
-
-- `IdempotencyKey` table with `unique_together = [('merchant', 'key')]`.
-- Full response body stored as JSON. Replays return exact same bytes.
-- In-flight race handled via `IntegrityError` catch on the unique constraint.
-- Keys expire after 24 hours.
+| Arjun Sharma Design | 3 invoices from Acme, Beta, Gamma | Rs. 10,000 |
+| Priya Freelance Studio | 2 invoices from Delta, Epsilon | Rs. 10,000 |
+| Ravi Tech Agency | 3 invoices from Zeta, Eta, Theta | Rs. 17,500 |
 
 ---
 
@@ -244,3 +261,5 @@ POST /payouts/
 | `SECRET_KEY` | dev key | Django secret key |
 | `DEBUG` | `True` | Django debug mode |
 | `ALLOWED_HOSTS` | `*` | Comma-separated allowed hosts |
+| `CORS_ALLOWED_ORIGINS` | (unset, allows all) | Comma-separated allowed CORS origins |
+| `CELERY_TASK_ALWAYS_EAGER` | `False` | Run Celery tasks synchronously (useful for environments without a worker) |
