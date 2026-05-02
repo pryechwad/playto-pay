@@ -4,8 +4,6 @@
 
 ## 1. The Ledger
 
-**Paste your balance calculation query.**
-
 ```python
 # merchants/views.py — MerchantBalanceView
 result = LedgerEntry.objects.filter(merchant=merchant).aggregate(
@@ -27,7 +25,7 @@ FROM ledger_ledgerentry
 WHERE merchant_id = %s;
 ```
 
-The same query runs inside `_create_payout_atomic` while holding a row-level lock, so the balance read and the debit write are atomic.
+The same query runs inside `_get_available_balance()` while holding a row-level lock, so the balance read and the debit write are atomic.
 
 **Why model credits and debits this way?**
 
@@ -44,8 +42,6 @@ I chose an append-only ledger over a mutable balance column for three concrete r
 ---
 
 ## 2. The Lock
-
-**Paste the exact code that prevents two concurrent payouts from overdrawing a balance.**
 
 ```python
 # payouts/views.py — _create_payout_atomic()
@@ -76,7 +72,13 @@ def _create_payout_atomic(merchant, bank_account, amount_paise, idempotency_key)
             description=f"Hold for payout {payout.id}",
             payout_id=payout.id,
         )
-        ...
+
+        response_body = _payout_to_dict(payout)
+        response_status_code = status.HTTP_201_CREATED
+
+        _store_idempotency_key(locked_merchant, idempotency_key, response_status_code, response_body, payout)
+
+    return payout, response_body, response_status_code
 ```
 
 **The database primitive: `SELECT FOR UPDATE`**
@@ -93,17 +95,15 @@ Python-level locks only protect within a single OS process. With 4 gunicorn work
 
 ## 3. The Idempotency
 
-**How does your system know it has seen a key before?**
-
 ```python
 # payouts/views.py — PayoutCreateView.post()
 
-expiry = timezone.now() - timedelta(hours=24)
+expiry = timezone.now() - timedelta(hours=IDEMPOTENCY_KEY_TTL_HOURS)
 existing = IdempotencyKey.objects.filter(
     merchant=merchant,
     key=idempotency_key,
     created_at__gte=expiry,
-).first()
+).select_related('payout').first()
 
 if existing:
     return Response(existing.response_body, status=existing.response_status)
@@ -120,10 +120,10 @@ The first request hasn't committed yet, so the second request's pre-check finds 
 The view catches `IntegrityError`, re-fetches the now-committed key, and returns its stored response:
 
 ```python
+# payouts/views.py — PayoutCreateView.post()
+
 except IntegrityError:
-    existing = IdempotencyKey.objects.filter(
-        merchant=merchant, key=idempotency_key
-    ).first()
+    existing = IdempotencyKey.objects.filter(merchant=merchant, key=idempotency_key).first()
     if existing:
         return Response(existing.response_body, status=existing.response_status)
     return Response({'error': 'Conflict'}, status=409)
@@ -134,8 +134,6 @@ No duplicate payout is created. The second request gets the same response as the
 ---
 
 ## 4. The State Machine
-
-**Where in the code is failed-to-completed blocked?**
 
 ```python
 # payouts/models.py — Payout
@@ -160,7 +158,7 @@ def transition_to(self, new_status):
 **The fund-return on failure is atomic with the state transition:**
 
 ```python
-# payouts/tasks.py
+# payouts/tasks.py — process_payout()
 
 with transaction.atomic():
     payout = Payout.objects.select_for_update().get(id=payout_id)
@@ -168,9 +166,9 @@ with transaction.atomic():
     if payout.status != Payout.PROCESSING:
         return  # guard against double-processing
 
-    payout.transition_to(Payout.FAILED)          # raises if illegal
+    payout.transition_to(Payout.FAILED)
     payout.save(update_fields=['status', 'updated_at'])
-    LedgerEntry.objects.create(                   # credit back in same txn
+    LedgerEntry.objects.create(
         merchant=payout.merchant,
         entry_type=LedgerEntry.CREDIT,
         amount_paise=payout.amount_paise,
@@ -184,8 +182,6 @@ If the `LedgerEntry` insert fails for any reason, the `save()` rolls back too. T
 ---
 
 ## 5. The AI Audit
-
-**One specific example where AI wrote subtly wrong code.**
 
 When I asked for the balance check and payout creation, the AI generated this:
 
@@ -215,27 +211,19 @@ def create_payout(merchant_id, amount_paise, bank_account_id):
 
 **Bug 2 — Python-level aggregation.** Fetching all ledger rows into Python and summing them is wrong for two reasons: it's slow at scale, and it reads rows that may not yet be committed by concurrent transactions. The balance must be computed by the database inside the same transaction that holds the lock.
 
-**What I replaced it with:**
+**What I did instead:**
 
 ```python
-# What I actually shipped
+# payouts/views.py — _get_available_balance()
 
-with transaction.atomic():
-    # Lock the merchant row first — all other requests block here
-    locked_merchant = Merchant.objects.select_for_update().get(id=merchant.id)
-
-    # Aggregation runs in the database, inside the lock
-    result = LedgerEntry.objects.filter(merchant=locked_merchant).aggregate(
-        total_credits=Sum('amount_paise', filter=Q(entry_type='credit')),
-        total_debits=Sum('amount_paise', filter=Q(entry_type='debit')),
+def _get_available_balance(merchant):
+    result = LedgerEntry.objects.filter(merchant=merchant).aggregate(
+        total_credits=Sum('amount_paise', filter=Q(entry_type=LedgerEntry.CREDIT)),
+        total_debits=Sum('amount_paise', filter=Q(entry_type=LedgerEntry.DEBIT)),
     )
-    available = (result['total_credits'] or 0) - (result['total_debits'] or 0)
-
-    if available < amount_paise:
-        raise _InsufficientFunds()
-
-    payout = Payout.objects.create(...)
-    LedgerEntry.objects.create(entry_type='debit', ...)  # debit in same txn
+    credits = result['total_credits'] or 0
+    debits  = result['total_debits']  or 0
+    return credits - debits
 ```
 
-No mutable balance column. No Python-level sum. The lock, the balance check, and the debit write are a single atomic unit at the database level.
+This runs as a single `SELECT ... SUM() FILTER (...)` inside the same `transaction.atomic()` block that holds the `SELECT FOR UPDATE` lock on the merchant row. The balance read and the debit write are serialised at the database level — no Python arithmetic on fetched rows, no mutable balance column.
