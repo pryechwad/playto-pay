@@ -73,7 +73,11 @@ class PayoutCreateView(APIView):
                 return Response(existing.response_body, status=existing.response_status)
             return Response({'error': 'Conflict'}, status=409)
 
-        process_payout.delay(str(payout.id))
+        import os
+        if os.environ.get('CELERY_WORKER_AVAILABLE', 'false').lower() == 'true':
+            process_payout.delay(str(payout.id))
+        else:
+            process_payout.apply(args=[str(payout.id)])
         return Response(response_body, status=response_status_code)
 
 
