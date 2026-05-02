@@ -15,6 +15,17 @@ Cross-border payout infrastructure for Indian merchants. Merchants accumulate ba
 
 ---
 
+## Live Demo
+
+| Service | URL |
+|---------|-----|
+| Frontend | https://playto-pay-vert.vercel.app |
+| Backend API | https://playto-pay-4lzw.onrender.com |
+
+> **Note on demo environment:** The live demo runs on Render's free tier which does not support persistent background workers. Payouts are created and debited correctly (201 response, ledger entry written, balance updated) but will remain in `pending` status rather than transitioning to `completed/failed`. The full `pending → processing → completed/failed` lifecycle works correctly when run locally with Docker (Celery worker included). The concurrency, idempotency, and balance integrity guarantees are unaffected.
+
+---
+
 ## Quick Start (Docker — recommended)
 
 ```bash
