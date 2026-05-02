@@ -6,12 +6,7 @@ Cross-border payout infrastructure for Indian merchants. Merchants accumulate ba
 
 ## Live Demo
 
-| Service | URL |
-|---------|-----|
-| Frontend | https://playto-pay-vert.vercel.app |
-| Backend API | https://playto-pay-4lzw.onrender.com |
-
-> **Note on demo environment:** The live demo runs on Render's free tier. Payouts are created and debited correctly (201 response, ledger entry written, balance updated). The full `pending -> processing -> completed/failed` lifecycle works correctly when run locally with Docker. The concurrency, idempotency, and balance integrity guarantees are unaffected by the deployment environment.
+https://playto-pay-vert.vercel.app
 
 ---
 
@@ -263,3 +258,11 @@ python manage.py test payouts
 | `ALLOWED_HOSTS` | `*` | Comma-separated allowed hosts |
 | `CORS_ALLOWED_ORIGINS` | (unset, allows all) | Comma-separated allowed CORS origins |
 | `CELERY_TASK_ALWAYS_EAGER` | `False` | Run Celery tasks synchronously (useful for environments without a worker) |
+
+---
+
+## Deployment Notes
+
+The live demo runs on Render's free tier with `CELERY_TASK_ALWAYS_EAGER=True`. This setting runs the Celery task synchronously within the same web process instead of dispatching to a background worker. The full `pending -> processing -> completed/failed` lifecycle executes on every payout request, and the status will reflect `completed` or `failed` in the UI immediately.
+
+When running locally with Docker, the lifecycle runs through a real Celery worker and Redis queue as intended. The concurrency, idempotency, and balance integrity guarantees are identical in both environments.
